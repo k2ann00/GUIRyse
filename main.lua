@@ -81,8 +81,8 @@ function love.update(dt)
     engine.animator:update(dt)
     engine.sceneManager:update(dt)
     engine.shader:updateTime(dt)
-    engine.sceneView:update(dt)  -- SceneView'ı güncelle
-
+    engine.sceneView:update(dt)
+    
     engine.console:update()
     
     -- Draw ImGui windows
@@ -154,19 +154,26 @@ end
 function love.mousemoved(x, y, dx, dy)
     imgui.MouseMoved(x, y)
     
+    -- Get references to SceneView
+    local SceneView = engine.sceneView
+    
     -- Tilemap mouse sürükleme işleme
     if engine.tilemap:mousemoved(x, y, dx, dy) then
         return
     end
     
-    -- Camera pan with middle mouse button (only in Scene view)
-    if love.mouse.isDown(3) and not engine.sceneView.isPlaying then  -- Middle mouse button
-        engine.camera:move(
-            -dx / engine.camera.scaleX,  -- scaleX kullan
-            -dy / engine.camera.scaleY   -- scaleY kullan
-        )
+    -- Check if mouse is over SceneView and not in play mode
+    if SceneView.isHovered and not SceneView.wantCaptureMouse and not SceneView.isPlaying then
+        -- Camera pan with middle mouse button
+        if love.mouse.isDown(3) then  -- Middle mouse button
+            engine.camera:move(
+                -dx / engine.camera.scaleX,
+                -dy / engine.camera.scaleY
+            )
+        end
     end
 end
+
 
 function love.mousepressed(x, y, button)
     imgui.MousePressed(button)
@@ -184,8 +191,11 @@ end
 function love.wheelmoved(x, y)
     imgui.WheelMoved(y)
     
-    -- Zoom camera with mouse wheel (only in Scene view)
-    if not imgui.GetWantCaptureMouse() and not engine.sceneView.isPlaying then
+    -- Get references to SceneView
+    local SceneView = engine.sceneView
+    
+    -- Zoom camera with mouse wheel when hovering over SceneView and not in play mode
+    if SceneView.isHovered and not SceneView.wantCaptureMouse and not SceneView.isPlaying then
         if y > 0 then
             engine.camera:zoom(1.1)
         elseif y < 0 then
@@ -193,6 +203,7 @@ function love.wheelmoved(x, y)
         end
     end
 end
+
 
 function love.textinput(text)
     imgui.TextInput(text)

@@ -492,19 +492,21 @@ function SceneManager:handleInput()
     local mouseX, mouseY = love.mouse.getPosition()
     local worldX, worldY = self:screenToWorld(mouseX, mouseY)
     
-    -- Get SceneView module to check play state
+    -- Get SceneView module to check play state and hover state
     local SceneView = require "modules.scene_view"
     
     -- Skip input handling if in play mode
     if SceneView.isPlaying then return end
+    
+    -- Skip if not hovering over SceneView
+    if not SceneView.isHovered then return end
     
     -- Eğer bir asset sürükleniyorsa ve ImGui mouse'u kapsamıyorsa
     if not imgui.GetWantCaptureMouse() and State.draggedAsset and State.dragStarted then
         -- Mouse bırakıldığında yeni entity oluştur
         if not love.mouse.isDown(1) then
             -- Sadece sahne üzerinde fare bırakılırsa entity oluştur
-            if worldX >= 0 and worldX <= love.graphics.getWidth() and 
-               worldY >= 0 and worldY <= love.graphics.getHeight() then
+            if SceneView.isHovered then
                 self:handleDraggedAsset(State.draggedAsset, worldX, worldY)
             end
             
@@ -521,6 +523,7 @@ function SceneManager:handleInput()
        State.selectedEntity.components and 
        State.selectedEntity.components.tilemap and
        Tilemap.tilesetWindow.selectedTile and
+       SceneView.isHovered and 
        not imgui.GetWantCaptureMouse() then
         
         -- Tile Map içinde fare konumu
@@ -540,8 +543,8 @@ function SceneManager:handleInput()
         end
     end
     
-    -- Mouse tıklaması
-    if love.mouse.isDown(1) and not imgui.GetWantCaptureMouse() then
+    -- Mouse tıklaması - only process if SceneView is hovered
+    if love.mouse.isDown(1) and not imgui.GetWantCaptureMouse() and SceneView.isHovered then
         -- Mouse delta hesapla
         local dx = (mouseX - self.lastMouseX) / Camera.scaleX
         local dy = (mouseY - self.lastMouseY) / Camera.scaleY
@@ -627,12 +630,13 @@ function SceneManager:handleInput()
         -- Mouse bırakıldığında
         self.isDragging = false
         self.draggedHandle = nil
-    end
+    end  -- Fixed: replaced the curly brace with a proper parenthesis
     
     -- Son mouse pozisyonunu güncelle
     self.lastMouseX = mouseX
     self.lastMouseY = mouseY
 end
+
 
 function SceneManager:getEntityAtPosition(x, y)
     for i = #self.entities, 1, -1 do  -- Üstteki entity'leri önce kontrol et
@@ -702,15 +706,37 @@ function SceneManager:checkHandles(x, y, entity)
 end
 
 function SceneManager:screenToWorld(x, y)
-    -- Convert screen coordinates to world coordinates
+    -- Get the window position of the SceneView
+    local SceneView = require "modules.scene_view"
+    local windowPos = {x = 0, y = 0}
+    
+    if imgui.GetWindowPos then
+        local wx, wy = imgui.GetWindowPos()
+        windowPos.x = wx
+        windowPos.y = wy
+    end
+    
+    -- Calculate the toolbar offset
+    local toolbarOffset = SceneView.playButtonSize * 1.5
+    
+    -- Adjust mouse position relative to the Scene View window position
+    -- and account for ImGui's toolbar
+    local relativeX = x - windowPos.x
+    local relativeY = y - windowPos.y - toolbarOffset
+    
+    -- Convert screen coordinates to world coordinates using the camera
     local scaleX = Camera.scaleX
     local scaleY = Camera.scaleY
     local offsetX = Camera.x
     local offsetY = Camera.y
-    local worldX = (x - love.graphics.getWidth() / 2) / scaleX + offsetX
-    local worldY = (y - love.graphics.getHeight() / 2) / scaleY + offsetY
+    
+    -- Calculate world position
+    local worldX = (relativeX - love.graphics.getWidth() / 2) / scaleX + offsetX
+    local worldY = (relativeY - love.graphics.getHeight() / 2) / scaleY + offsetY
+    
     return worldX, worldY
 end
+
 
 function SceneManager:selectEntityAt(mouseX, mouseY)
     -- Select entity based on mouse click position

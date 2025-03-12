@@ -44,8 +44,9 @@ local SceneView = {
 }
 
 function SceneView:init()
+    -- Increase default window size
     State.showWindows.sceneView = true
-    State.windowSizes.sceneView = {width = 800, height = 600}
+    State.windowSizes.sceneView = {width = 1024, height = 768} -- Increased from 800x600
     self.windowFlags = 0
     if imgui.WindowFlags_NoScrollbar then
         self.windowFlags = self.windowFlags + imgui.WindowFlags_NoScrollbar
@@ -57,11 +58,12 @@ function SceneView:init()
         self.windowFlags = self.windowFlags + imgui.WindowFlags_NoCollapse
     end
     
-    -- Render canvas oluştur
-    self.renderCanvas = love.graphics.newCanvas(800, 600)
+    -- Render canvas oluştur - match the new larger size
+    self.renderCanvas = love.graphics.newCanvas(1024, 768)
     
     Console:log("Scene View initialized with GUID: " .. self.guid)
 end
+
 
 function SceneView:saveEntityStates()
     self.entityStates = {}
@@ -200,16 +202,50 @@ function SceneView:pausePlaying()
     Console:log(self.isPaused and "Paused game" or "Resumed game")
 end
 
-
+function SceneView:handleCameraInput(dt)
+    if not self.isHovered or self.isPlaying then return end
+    
+    -- Handle keyboard camera controls when SceneView is focused
+    local moveSpeed = 500 * dt / Camera.scaleX  -- Base speed adjusted by zoom level
+    
+    -- Arrow keys and WASD for camera panning when holding Shift
+    if love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift") then
+        if love.keyboard.isDown("left") or love.keyboard.isDown("a") then
+            Camera:move(-moveSpeed, 0)
+        end
+        if love.keyboard.isDown("right") or love.keyboard.isDown("d") then
+            Camera:move(moveSpeed, 0) 
+        end
+        if love.keyboard.isDown("up") or love.keyboard.isDown("w") then
+            Camera:move(0, -moveSpeed)
+        end
+        if love.keyboard.isDown("down") or love.keyboard.isDown("s") then
+            Camera:move(0, moveSpeed)
+        end
+    end
+    
+    -- Additional camera controls
+    if love.keyboard.isDown("=") or love.keyboard.isDown("+") then
+        Camera:zoom(1 + (0.5 * dt)) -- Zoom in
+    end
+    if love.keyboard.isDown("-") then
+        Camera:zoom(1 - (0.5 * dt)) -- Zoom out
+    end
+end
 
 function SceneView:update(dt)
+    -- Handle camera input
+    self:handleCameraInput(dt)
+    
+    -- Update game logic if in play mode
     if self.isPlaying and not self.isPaused then
+        -- Update game time
         self.gameTime = self.gameTime + dt
         
-        -- Oyuncu entitylerini güncelle
+        -- Update player entities
         for _, entity in ipairs(SceneManager.entities) do
             if entity.isPlayer and entity.playerSpeed then
-                -- Oyuncuyu hareket ettir
+                -- Handle player movement
                 local speed = entity.playerSpeed * dt
                 
                 if love.keyboard.isDown("left") or love.keyboard.isDown("a") then
@@ -225,7 +261,7 @@ function SceneView:update(dt)
                     entity.y = entity.y + speed
                 end
                 
-                -- Oyuncu kamera takibi
+                -- Update player position in State for other modules
                 if entity == State.player then
                     State.playerX = entity.x
                     State.playerY = entity.y
@@ -234,12 +270,17 @@ function SceneView:update(dt)
         end
     end
     
-    -- Render canvas boyutlarını güncelle
+    -- Make sure the render canvas matches the window size
     local w, h = love.graphics.getDimensions()
-    if self.renderCanvas:getWidth() ~= w or self.renderCanvas:getHeight() ~= h then
+    if w > 0 and h > 0 and (
+       self.renderCanvas:getWidth() ~= w or 
+       self.renderCanvas:getHeight() ~= h) then
+        -- Create a new canvas with the correct dimensions
         self.renderCanvas = love.graphics.newCanvas(w, h)
+        Console:log("Resized render canvas to " .. w .. "x" .. h)
     end
 end
+
 
 -- Scene içeriğini canvas'a çizme fonksiyonu
 function SceneView:renderScene()
@@ -309,19 +350,13 @@ function SceneView:draw()
             -- Render canvas'ı viewport içine çiz
             imgui.Image(self.renderCanvas, viewportWidth, viewportHeight)
             
+            -- Track if SceneView is hovered for input handling
+            self.isHovered = imgui.IsItemHovered()
+            self.wantCaptureMouse = imgui.GetWantCaptureMouse()
+            
             -- Stil ayarlarını geri al
             imgui.PopStyleColor()
             imgui.PopStyleVar()
-            
-            -- Fare giriş takibi (GetIO kullanmadan)
-            local isHovered = imgui.IsItemHovered()
-            self.wantCaptureMouse = imgui.GetWantCaptureMouse()
-            
-            -- Fare girişini işle
-            if isHovered and not self.wantCaptureMouse then
-                -- Sahne içinde mouse kontrollerini işle
-                -- İleride fare ile seçim vb işlemleri burada yapabilirsiniz
-            end
             
             imgui.EndChild()
         end
@@ -460,6 +495,20 @@ function SceneView:handleKeypress(key)
         return true
     elseif key == "p" and self.isPlaying then
         self:pausePlaying()
+        return true
+    -- Add camera-specific shortcuts
+    elseif key == "f" and State.selectedEntity and not self.isPlaying then
+        -- Focus camera on selected entity
+        Camera:focusOnEntity(State.selectedEntity)
+        return true
+    elseif key == "r" and not self.isPlaying then
+        -- Reset camera position
+        Camera:reset()
+        return true
+    elseif key == "0" and not self.isPlaying then
+        -- Reset zoom to 1:1
+        Camera.scaleX = 1
+        Camera.scaleY = 1
         return true
     end
     

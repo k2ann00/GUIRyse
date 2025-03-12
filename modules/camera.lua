@@ -21,11 +21,23 @@ end
 
 function Camera:set()
     love.graphics.push()
-    love.graphics.translate(love.graphics.getWidth() / 2, love.graphics.getHeight() / 2)
+    
+    -- Get the dimensions of the window or canvas
+    local w, h = love.graphics.getDimensions()
+    
+    -- Center transform at the middle of the screen
+    love.graphics.translate(w / 2, h / 2)
+    
+    -- Apply zoom
     love.graphics.scale(self.scaleX, self.scaleY)
-    love.graphics.rotate(math.rad(self.rotation))  -- Dereceyi radyana çevir
+    
+    -- Apply rotation (convert degrees to radians)
+    love.graphics.rotate(math.rad(self.rotation))
+    
+    -- Apply translation to camera position
     love.graphics.translate(-self.x, -self.y)
 end
+
 
 function Camera:unset()
     love.graphics.pop()
@@ -164,16 +176,52 @@ function Camera:draw()
         
         imgui.Separator()
         
+        -- Add camera shortcuts info
+        imgui.PushStyleColor(imgui.Col_Text, 0.7, 0.7, 1.0, 1.0)
+        imgui.Text("Camera Shortcuts:")
+        imgui.PopStyleColor()
+        
+        imgui.Text("F - Focus on selected entity")
+        imgui.Text("R - Reset camera position")
+        imgui.Text("0 - Reset zoom to 1:1")
+        imgui.Text("Shift+WASD - Pan camera")
+        imgui.Text("+/- - Zoom in/out")
+        
+        imgui.Separator()
+        
+        -- Camera control buttons
         if imgui.Button("Reset Camera") then
-            self.x = 0
-            self.y = 0
-            self.scaleX = 1
-            self.scaleY = 1
-            self.rotation = 0
-            Console:log("Camera reset to default values", "info")
+            self:reset()
+        end
+        
+        imgui.SameLine()
+        
+        if imgui.Button("Focus Selected") and State.selectedEntity then
+            self:focusOnEntity(State.selectedEntity)
         end
     end
     imgui.End()
 end
+
+function Camera:focusOnEntity(entity)
+    if not entity then return end
+    
+    -- Set camera position to entity position
+    self.x = entity.x + entity.width/2
+    self.y = entity.y + entity.height/2
+    
+    Console:log("Camera focused on: " .. (entity.name or "unnamed entity"))
+end
+
+
+function Camera:reset()
+    self.x = 0
+    self.y = 0
+    self.scaleX = 1
+    self.scaleY = 1
+    self.rotation = 0
+    Console:log("Camera reset to default position")
+end
+
 
 return Camera
