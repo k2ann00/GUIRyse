@@ -1,0 +1,7 @@
+-- Entity GUIDs
+-- Format: name = GUID
+
+Entity 1 = "f514d595-8945-4582-94d2-dcd7a573f0df"
+Entity 2 = "36481f31-cf2e-4572-8aa2-2fe3d2e1b842"
+
+-- Total entities: 2

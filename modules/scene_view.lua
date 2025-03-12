@@ -1,0 +1,487 @@
+local State = require "state"
+local Console = require "modules.console"
+local Camera = require "modules.camera"
+local SceneManager = require "modules.scene_manager"
+
+-- GUID Oluşturma Fonksiyonu
+local function generateGUID()
+    local template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+    return string.gsub(template, "[xy]", function(c)
+        local v = (c == "x") and math.random(0, 0xf) or math.random(8, 0xb)
+        return string.format("%x", v)
+    end)
+end
+
+local SceneView = {
+    guid = generateGUID(), -- SceneView bileşeninin benzersiz GUID'si
+    showWindow = true,
+    isPlaying = false,
+    isPaused = false,
+    windowFlags = 0,
+    viewType = "Scene", -- "Scene" or "Game"
+    lastPauseState = false,
+    gameTime = 0,
+    playButtonSize = 30,
+    editorCamera = { -- Store editor camera state
+        guid = generateGUID(),
+        x = 0,
+        y = 0,
+        scaleX = 1,
+        scaleY = 1,
+        rotation = 0
+    },
+    gameCamera = { -- Store game camera state
+        guid = generateGUID(),
+        x = 0,
+        y = 0,
+        scaleX = 1,
+        scaleY = 1,
+        rotation = 0
+    },
+    entityStates = {}, -- Store the original states of entities for reset
+    renderCanvas = nil,  -- Canvas for rendering scene
+    wantCaptureMouse = false  -- Mouse capture flag
+}
+
+function SceneView:init()
+    State.showWindows.sceneView = true
+    State.windowSizes.sceneView = {width = 800, height = 600}
+    self.windowFlags = 0
+    if imgui.WindowFlags_NoScrollbar then
+        self.windowFlags = self.windowFlags + imgui.WindowFlags_NoScrollbar
+    end
+    if imgui.WindowFlags_NoScrollWithMouse then
+        self.windowFlags = self.windowFlags + imgui.WindowFlags_NoScrollWithMouse
+    end
+    if imgui.WindowFlags_NoCollapse then
+        self.windowFlags = self.windowFlags + imgui.WindowFlags_NoCollapse
+    end
+    
+    -- Render canvas oluştur
+    self.renderCanvas = love.graphics.newCanvas(800, 600)
+    
+    Console:log("Scene View initialized with GUID: " .. self.guid)
+end
+
+function SceneView:saveEntityStates()
+    self.entityStates = {}
+    for _, entity in ipairs(SceneManager.entities) do
+        -- Entity GUID yoksa oluştur
+        if not entity.guid then
+            entity.guid = generateGUID()
+            Console:log("Generated GUID for entity without one: " .. entity.guid)
+        end
+        
+        local stateCopy = {
+            guid = entity.guid, -- Entity GUID'si
+            x = entity.x,
+            y = entity.y,
+            rotation = entity.rotation,
+            width = entity.width,
+            height = entity.height,
+            components = {}
+        }
+        
+        -- Save component states that need to be reset
+        if entity.components then
+            if entity.components.animator then
+                stateCopy.components.animator = {
+                    currentFrame = entity.components.animator.currentFrame,
+                    playing = entity.components.animator.playing,
+                    timer = entity.components.animator.timer
+                }
+            end
+            
+            if entity.components.collider then
+                -- Store collider state
+            end
+            -- Add more component states as needed
+        end
+        
+        self.entityStates[entity.guid] = stateCopy
+    end
+    
+    -- Save camera state
+    self.editorCamera = {
+        guid = self.editorCamera.guid,
+        x = Camera.x,
+        y = Camera.y,
+        scaleX = Camera.scaleX,
+        scaleY = Camera.scaleY,
+        rotation = Camera.rotation
+    }
+    
+    Console:log("Saved entity states for play mode")
+end
+
+function SceneView:restoreEntityStates()
+    for _, entity in ipairs(SceneManager.entities) do
+        local savedState = self.entityStates[entity.guid]
+        if savedState then
+            entity.x = savedState.x
+            entity.y = savedState.y
+            entity.rotation = savedState.rotation
+            entity.width = savedState.width
+            entity.height = savedState.height
+            
+            -- Restore component states
+            if entity.components and savedState.components then
+                if entity.components.animator and savedState.components.animator then
+                    entity.components.animator.currentFrame = savedState.components.animator.currentFrame
+                    entity.components.animator.playing = savedState.components.animator.playing
+                    entity.components.animator.timer = savedState.components.animator.timer
+                end
+                
+                -- Restore more component states as needed
+            end
+        end
+    end
+    
+    -- Restore camera state
+    Camera.x = self.editorCamera.x
+    Camera.y = self.editorCamera.y
+    Camera.scaleX = self.editorCamera.scaleX
+    Camera.scaleY = self.editorCamera.scaleY
+    Camera.rotation = self.editorCamera.rotation
+    
+    Console:log("Restored entity states from play mode")
+end
+
+function SceneView:startPlaying()
+    if not self.isPlaying then
+        self:saveEntityStates()
+        self.isPlaying = true
+        self.isPaused = false
+        self.gameTime = 0
+        self.viewType = "Game"
+        
+        -- Start animations for entities with animator components
+        for _, entity in ipairs(SceneManager.entities) do
+            if entity.components and entity.components.animator then
+                entity.components.animator.playing = true
+                entity.components.animator.timer = 0
+            end
+        end
+        
+        Console:log("Started play mode")
+        
+        -- Show the help window the first time play mode is started
+        local PlayModeHelp = require "modules.play_mode_help"
+        PlayModeHelp:showHelp()
+    end
+end
+
+function SceneView:stopPlaying()
+    if self.isPlaying then
+        self.isPlaying = false
+        self.isPaused = false
+        self.viewType = "Scene"
+        self:restoreEntityStates()
+        
+        -- Stop animations
+        for _, entity in ipairs(SceneManager.entities) do
+            if entity.components and entity.components.animator then
+                entity.components.animator.playing = false
+            end
+        end
+        
+        Console:log("Stopped play mode")
+    end
+end
+
+function SceneView:togglePlaying()
+    if self.isPlaying then
+        self:stopPlaying()
+    else
+        self:startPlaying()
+    end
+end
+
+function SceneView:pausePlaying()
+    self.isPaused = not self.isPaused
+    
+    -- Pause/resume animations and physics
+    for _, entity in ipairs(SceneManager.entities) do
+        if entity.components and entity.components.animator then
+            if self.isPaused then
+                self.lastPauseState = entity.components.animator.playing
+                entity.components.animator.playing = false
+            else
+                entity.components.animator.playing = self.lastPauseState
+            end
+        end
+    end
+    
+    Console:log(self.isPaused and "Paused game" or "Resumed game")
+end
+
+function SceneView:update(dt)
+    if self.isPlaying and not self.isPaused then
+        self.gameTime = self.gameTime + dt
+        
+        -- Oyuncu entitylerini güncelle
+        for _, entity in ipairs(SceneManager.entities) do
+            if entity.isPlayer and entity.playerSpeed then
+                -- Oyuncuyu hareket ettir
+                local speed = entity.playerSpeed * dt
+                
+                if love.keyboard.isDown("left") or love.keyboard.isDown("a") then
+                    entity.x = entity.x - speed
+                end
+                if love.keyboard.isDown("right") or love.keyboard.isDown("d") then
+                    entity.x = entity.x + speed
+                end
+                if love.keyboard.isDown("up") or love.keyboard.isDown("w") then
+                    entity.y = entity.y - speed
+                end
+                if love.keyboard.isDown("down") or love.keyboard.isDown("s") then
+                    entity.y = entity.y + speed
+                end
+                
+                -- Oyuncu kamera takibi
+                if entity == State.player then
+                    State.playerX = entity.x
+                    State.playerY = entity.y
+                end
+            end
+        end
+    end
+    
+    -- Render canvas boyutlarını güncelle
+    local w, h = love.graphics.getDimensions()
+    if self.renderCanvas:getWidth() ~= w or self.renderCanvas:getHeight() ~= h then
+        self.renderCanvas = love.graphics.newCanvas(w, h)
+    end
+end
+
+-- Scene içeriğini canvas'a çizme fonksiyonu
+function SceneView:renderScene()
+    -- Canvas'a çizmeye başla
+    love.graphics.setCanvas(self.renderCanvas)
+    love.graphics.clear(0.1, 0.1, 0.1, 1) -- Koyu gri arka plan
+    
+    -- Kamera transformasyonlarını uygula
+    Camera:set()
+    
+    -- Oyun modunda değilsek grid çiz
+    if not self.isPlaying then
+        SceneManager:drawGrid()
+    end
+    
+    -- Entityleri çiz
+    SceneManager:drawEntities()
+    
+    -- Tilemap çiz
+    local Tilemap = require "modules.tilemap"
+    Tilemap:drawOnScene()
+    
+    -- Kamera transformasyonlarını sıfırla
+    Camera:unset()
+    
+    -- Normal canvas'a dön
+    love.graphics.setCanvas()
+end
+
+function SceneView:draw()
+    if not State.showWindows.sceneView then return end
+    
+    -- Sahneyi renderCanvas'a çiz
+    self:renderScene()
+    
+    -- Scene View penceresini göster
+    imgui.SetNextWindowSize(State.windowSizes.sceneView.width, State.windowSizes.sceneView.height, imgui.Cond_FirstUseEver)
+    
+    if imgui.Begin(self.viewType .. " View", State.showWindows.sceneView, self.windowFlags) then
+        -- Get content region for the view
+        local windowWidth = imgui.GetWindowWidth()
+        local windowHeight = imgui.GetWindowHeight() - self.playButtonSize * 1.5
+        
+        -- Draw play control toolbar
+        self:drawToolbar(windowWidth)
+        
+        -- Draw border line below toolbar
+        imgui.Separator()
+        
+        -- Draw the view content in a child window
+        if imgui.BeginChild("SceneContent", 0, 0, false, imgui.WindowFlags_NoScrollbar) then
+            -- Get viewport dimensions
+            local viewportWidth = imgui.GetWindowWidth()
+            local viewportHeight = imgui.GetWindowHeight()
+            
+            -- Show a different border color in Game mode
+            if self.viewType == "Game" then
+                -- Blue border for Game mode
+                imgui.PushStyleColor(imgui.Col_Border, 0, 0.5, 1.0, 1.0)
+                imgui.PushStyleVar(imgui.StyleVar_FrameBorderSize, 2.0)
+            else
+                -- Gray border for Scene mode
+                imgui.PushStyleColor(imgui.Col_Border, 0.5, 0.5, 0.5, 1.0)
+                imgui.PushStyleVar(imgui.StyleVar_FrameBorderSize, 1.0)
+            end
+            
+            -- Render canvas'ı viewport içine çiz
+            imgui.Image(self.renderCanvas, viewportWidth, viewportHeight)
+            
+            -- Stil ayarlarını geri al
+            imgui.PopStyleColor()
+            imgui.PopStyleVar()
+            
+            -- Fare giriş takibi (GetIO kullanmadan)
+            local isHovered = imgui.IsItemHovered()
+            self.wantCaptureMouse = imgui.GetWantCaptureMouse()
+            
+            -- Fare girişini işle
+            if isHovered and not self.wantCaptureMouse then
+                -- Sahne içinde mouse kontrollerini işle
+                -- İleride fare ile seçim vb işlemleri burada yapabilirsiniz
+            end
+            
+            imgui.EndChild()
+        end
+    end
+    imgui.End()
+end
+
+function SceneView:drawToolbar(windowWidth)
+    -- Set toolbar height
+    local toolbarHeight = self.playButtonSize
+    
+    -- Center the toolbar buttons
+    local buttonSpacing = 10
+    local totalButtonWidth = self.playButtonSize * 3 + buttonSpacing * 2  -- for play, pause, step buttons
+    local startX = (windowWidth - totalButtonWidth) / 2
+    
+    imgui.SetCursorPosX(startX)
+    
+    -- Play/Stop button
+    if self.isPlaying then
+        -- Draw stop button (red square)
+        if imgui.ColorButton("##Stop", 1, 0.3, 0.3, 1, 0, self.playButtonSize, self.playButtonSize) then
+            self:stopPlaying()
+        end
+        
+        -- Draw tooltip on hover
+        if imgui.IsItemHovered() then
+            imgui.BeginTooltip()
+            imgui.Text("Stop (Esc)")
+            imgui.EndTooltip()
+        end
+    else
+        -- Draw play button (green triangle using ColorButton)
+        if imgui.ColorButton("##Play", 0.3, 1, 0.3, 1, 0, self.playButtonSize, self.playButtonSize) then
+            self:startPlaying()
+        end
+        
+        -- Draw tooltip on hover
+        if imgui.IsItemHovered() then
+            imgui.BeginTooltip()
+            imgui.Text("Play")
+            imgui.EndTooltip()
+        end
+    end
+    
+    -- Pause button
+    imgui.SameLine()
+    imgui.SetCursorPosX(startX + self.playButtonSize + buttonSpacing)
+    
+    local pauseButtonColor = self.isPaused and {0.3, 0.7, 1.0, 1.0} or {0.7, 0.7, 0.7, 1.0}
+    
+    if imgui.ColorButton("##Pause", pauseButtonColor[1], pauseButtonColor[2], pauseButtonColor[3], pauseButtonColor[4], 0, self.playButtonSize, self.playButtonSize) then
+        if self.isPlaying then  -- Only allow pause when playing
+            self:pausePlaying()
+        end
+    end
+    
+    -- Draw tooltip on hover
+    if imgui.IsItemHovered() then
+        imgui.BeginTooltip()
+        imgui.Text(self.isPlaying and (self.isPaused and "Resume" or "Pause") or "Pause (disabled)")
+        imgui.EndTooltip()
+    end
+    
+    -- Step button (for single frame advance)
+    imgui.SameLine()
+    imgui.SetCursorPosX(startX + self.playButtonSize * 2 + buttonSpacing * 2)
+    
+    if imgui.ColorButton("##Step", 0.7, 0.7, 0.7, 1, 0, self.playButtonSize, self.playButtonSize) then
+        if self.isPlaying and self.isPaused then
+            -- Execute a single frame
+            Console:log("Stepped one frame")
+            
+            -- Process one frame of animation/physics
+            local dt = 1/60 -- Adım başına sabit zaman
+            
+            -- Entity animasyonlarını bir kare ilerlet
+            for _, entity in ipairs(SceneManager.entities) do
+                if entity.components and entity.components.animator and 
+                   entity.components.animator.currentAnimation then
+                    local animator = entity.components.animator
+                    animator.timer = animator.timer + dt
+                    
+                    local currentFrame = animator.currentAnimation.frames[animator.currentFrame]
+                    if currentFrame and animator.timer >= currentFrame.duration then
+                        animator.timer = animator.timer - currentFrame.duration
+                        animator.currentFrame = animator.currentFrame + 1
+                        
+                        -- Animasyon sonuna gelince başa dön
+                        if animator.currentFrame > #animator.currentAnimation.frames then
+                            animator.currentFrame = 1
+                        end
+                    end
+                end
+            end
+            
+            -- Fiziği bir kare güncelle
+            if State.world then
+                State.world:update(dt)
+            end
+        end
+    end
+    
+    -- Draw tooltip on hover
+    if imgui.IsItemHovered() then
+        imgui.BeginTooltip()
+        imgui.Text("Step Frame (only when paused)")
+        imgui.EndTooltip()
+    end
+    
+    -- Draw game time if playing
+    if self.isPlaying then
+        imgui.SameLine()
+        imgui.SetCursorPosX(windowWidth - 150)
+        imgui.AlignTextToFramePadding()
+        
+        local minutes = math.floor(self.gameTime / 60)
+        local seconds = math.floor(self.gameTime % 60)
+        local milliseconds = math.floor((self.gameTime * 1000) % 1000)
+        local timeText = string.format("Time: %02d:%02d.%03d", minutes, seconds, milliseconds)
+        
+        imgui.Text(timeText)
+    end
+    
+    -- Add separation space below the toolbar
+    imgui.Dummy(0, 5)
+end
+
+-- Handle keyboard shortcuts
+function SceneView:handleKeypress(key)
+    if key == "space" then
+        self:togglePlaying()
+        return true
+    elseif key == "escape" and self.isPlaying then
+        self:stopPlaying()
+        return true
+    elseif key == "p" and self.isPlaying then
+        self:pausePlaying()
+        return true
+    end
+    
+    return false
+end
+
+-- Fare yakalama durumunu kontrol et
+function SceneView:isMouseCaptured()
+    return self.wantCaptureMouse
+end
+
+return SceneView

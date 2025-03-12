@@ -1,0 +1,10 @@
+-- Asset GUIDs
+-- Format: name = GUID
+
+placeholder.png = "565f96d5-b886-40d9-b938-f998afdc9908"
+ryse.png = "f27028b2-fc89-4449-8b9c-c99d443c32c9"
+bg.png = "74d0e554-4fd3-46d1-a116-c448ca4ddea8"
+mushroom.png = "483b896f-3d32-47c3-818c-edf6ba5806bc"
+player.png = "686bb3c5-89e1-4f8f-9f22-10ffaf06bed5"
+
+-- Total assets: 5
