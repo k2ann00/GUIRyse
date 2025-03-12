@@ -111,7 +111,7 @@ function SceneManager:serializeEntities()
             components = {}
         }
         
-        -- Bileşenleri serileştir
+        -- Serialize components
         for compType, comp in pairs(entity.components) do
             entityData.components[compType] = self:serializeComponent(compType, comp, entity)
         end
@@ -122,93 +122,9 @@ function SceneManager:serializeEntities()
     return serialized
 end
 
--- Bileşen serileştirme için destek
-function SceneManager:serializeComponent(compType, comp, entity)
-    local AssetManager = require "modules.asset_manager"
-    
-    -- Her bileşen tipine özel serileştirme işlemleri
-    if compType == "sprite" then
-        local data = {
-            -- Görüntü referansını GUID olarak sakla
-            imageGUID = comp.image and comp.image.guid or nil,
-            color = comp.color,
-            flip_h = comp.flip_h,
-            flip_v = comp.flip_v
-        }
-        return data
-        
-    elseif compType == "animator" then
-        local data = {
-            animations = {},
-            currentAnimation = comp.currentAnimation and comp.currentAnimation.name or nil,
-            playing = comp.playing,
-            currentFrame = comp.currentFrame,
-            timer = comp.timer
-        }
-        
-        -- Animasyonları serileştir
-        for i, anim in ipairs(comp.animations or {}) do
-            local animData = {
-                name = anim.name,
-                sourceGUID = anim.source and anim.source.guid or nil,
-                frames = {},
-                frameWidth = anim.frameWidth,
-                frameHeight = anim.frameHeight
-            }
-            
-            -- Frame'leri serileştir
-            for j, frame in ipairs(anim.frames or {}) do
-                table.insert(animData.frames, {
-                    x = frame.x,
-                    y = frame.y,
-                    duration = frame.duration
-                })
-            end
-            
-            table.insert(data.animations, animData)
-        end
-        
-        return data
-        
-    elseif compType == "collider" then
-        local data = {
-            type = comp.type,
-            width = comp.width,
-            height = comp.height,
-            offset = comp.offset,
-            isTrigger = comp.isTrigger
-        }
-        return data
-        
-    elseif compType == "tilemap" then
-        local data = {
-            assetGUID = comp.asset and comp.asset.guid or nil,
-            tileWidth = comp.tileWidth,
-            tileHeight = comp.tileHeight,
-            mapWidth = comp.mapWidth,
-            mapHeight = comp.mapHeight,
-            layers = comp.layers,
-            currentLayer = comp.currentLayer
-        }
-        return data
-        
-    elseif compType == "shader" then
-        local data = {
-            shaderName = comp.shaderName,
-            enabled = comp.enabled,
-            parameters = comp.parameters
-        }
-        return data
-    end
-    
-    -- Bilinmeyen bileşenler için boş tablo döndür
-    return {}
-end
-
 -- Serileştirilmiş entity'leri geri yükleme
 function SceneManager:deserializeEntities(data)
-    local AssetManager = require "modules.asset_manager"
-    self.entities = {} -- Mevcut entity'leri temizle
+    self.entities = {} -- Clear current entities
     
     for _, entityData in ipairs(data) do
         local entity = {
@@ -224,14 +140,14 @@ function SceneManager:deserializeEntities(data)
             components = {}
         }
         
-        -- Bileşenleri geri yükle
+        -- Deserialize components
         for compType, compData in pairs(entityData.components) do
             entity.components[compType] = self:deserializeComponent(compType, compData, entity)
         end
         
         table.insert(self.entities, entity)
         
-        -- Oyuncu ise State.player'ı güncelle
+        -- Update State.player if it's the player entity
         if entity.isPlayer then
             State.player = entity
             State.playerX = entity.x
@@ -241,6 +157,7 @@ function SceneManager:deserializeEntities(data)
     
     Console:log("Deserialized " .. #self.entities .. " entities")
 end
+
 
 function SceneManager:drawGrid()
     if not self.showGrid then return end

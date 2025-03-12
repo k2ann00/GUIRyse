@@ -66,14 +66,9 @@ end
 function SceneView:saveEntityStates()
     self.entityStates = {}
     for _, entity in ipairs(SceneManager.entities) do
-        -- Entity GUID yoksa oluştur
-        if not entity.guid then
-            entity.guid = generateGUID()
-            Console:log("Generated GUID for entity without one: " .. entity.guid)
-        end
-        
+        -- Save the entity's state
         local stateCopy = {
-            guid = entity.guid, -- Entity GUID'si
+            guid = entity.guid,
             x = entity.x,
             y = entity.y,
             rotation = entity.rotation,
@@ -82,7 +77,7 @@ function SceneView:saveEntityStates()
             components = {}
         }
         
-        -- Save component states that need to be reset
+        -- Save component states (e.g., animator)
         if entity.components then
             if entity.components.animator then
                 stateCopy.components.animator = {
@@ -91,11 +86,6 @@ function SceneView:saveEntityStates()
                     timer = entity.components.animator.timer
                 }
             end
-            
-            if entity.components.collider then
-                -- Store collider state
-            end
-            -- Add more component states as needed
         end
         
         self.entityStates[entity.guid] = stateCopy
@@ -103,7 +93,6 @@ function SceneView:saveEntityStates()
     
     -- Save camera state
     self.editorCamera = {
-        guid = self.editorCamera.guid,
         x = Camera.x,
         y = Camera.y,
         scaleX = Camera.scaleX,
@@ -113,6 +102,7 @@ function SceneView:saveEntityStates()
     
     Console:log("Saved entity states for play mode")
 end
+
 
 function SceneView:restoreEntityStates()
     for _, entity in ipairs(SceneManager.entities) do
@@ -131,8 +121,6 @@ function SceneView:restoreEntityStates()
                     entity.components.animator.playing = savedState.components.animator.playing
                     entity.components.animator.timer = savedState.components.animator.timer
                 end
-                
-                -- Restore more component states as needed
             end
         end
     end
@@ -146,6 +134,7 @@ function SceneView:restoreEntityStates()
     
     Console:log("Restored entity states from play mode")
 end
+
 
 function SceneView:startPlaying()
     if not self.isPlaying then
@@ -164,10 +153,6 @@ function SceneView:startPlaying()
         end
         
         Console:log("Started play mode")
-        
-        -- Show the help window the first time play mode is started
-        local PlayModeHelp = require "modules.play_mode_help"
-        PlayModeHelp:showHelp()
     end
 end
 
@@ -214,6 +199,8 @@ function SceneView:pausePlaying()
     
     Console:log(self.isPaused and "Paused game" or "Resumed game")
 end
+
+
 
 function SceneView:update(dt)
     if self.isPlaying and not self.isPaused then
